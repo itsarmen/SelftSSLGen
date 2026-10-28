@@ -88,7 +88,7 @@ Edit `company.json` next to the script and it is loaded automatically. Every val
   "state": "California",
   "locality": "San Francisco",
   "email": "admin@acme.local",
-  "common_name": "*.example.com",
+  "common_name": "",
   "san": "",
   "days": 3650,
   "key_bits": 2048,
@@ -150,9 +150,9 @@ Files are written to the output directory (`output` by default), named after the
 - `extendedKeyUsage = serverAuth`
 - SubjectAltName automatically includes: CN, detected IP (if CN differs), `localhost`, `127.0.0.1`, hostname, plus any extra SANs
 
-## Wildcard certificates
+## Wildcard certificates (optional)
 
-Set the CN to a wildcard domain (via prompt, `company.json`, or `--cn`):
+By default the CN is the detected IP. A wildcard covers domain names only, never IPs. Set the CN to a wildcard domain when you need one (via prompt, `company.json`, or `--cn`):
 
 ```bash
 ./genssl.sh --yes --cn "*.example.com"

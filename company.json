@@ -5,7 +5,7 @@
   "state": "California",
   "locality": "San Francisco",
   "email": "admin@acme.ca",
-  "common_name": "*.example.com",
+  "common_name": "",
   "san": "",
   "days": 3650,
   "key_bits": 2048,
