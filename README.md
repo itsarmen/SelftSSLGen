@@ -46,7 +46,7 @@ Or override fields on the fly:
 
 ## Interactive prompts
 
-Defaults below apply when `company.json` and flags are absent; JSON values and flags replace them.
+Defaults below apply when `company.json` and flags are absent; JSON values and flags replace them. The PFX password is not prompted: it is auto-generated and printed at the end unless you set it.
 
 | Prompt | Default | Notes |
 |---|---|---|
@@ -56,11 +56,10 @@ Defaults below apply when `company.json` and flags are absent; JSON values and f
 | State / Province | blank | |
 | City / Locality | blank | |
 | Email address | blank | Optional |
-| Common Name (CN) | detected IP | Can be a hostname |
+| Common Name / wildcard | detected IP | Host, IP, or `*.example.com` |
 | Extra SANs | blank | Comma separated, e.g. `192.168.1.5,host.local` |
 | Validity in days | `3650` | 10 years |
 | RSA key size | `2048` | `4096` supported |
-| PFX password | blank | Blank is accepted by modern IIS |
 
 ## Options
 
@@ -68,11 +67,11 @@ Defaults below apply when `company.json` and flags are absent; JSON values and f
 |---|---|
 | `-o, --out DIR` | Output directory (default: `output`) |
 | `-n, --name NAME` | Company / Organization name |
-| `-c, --cn NAME` | Common Name (default: detected IP) |
+| `-c, --cn NAME` | Common Name / wildcard (default: detected IP) |
 | `-s, --san LIST` | Extra SANs, comma separated |
 | `-d, --days N` | Validity in days (default: `3650`) |
 | `-b, --bits N` | RSA key size (default: `2048`) |
-| `-p, --pfx-pass P` | Password for the IIS `.pfx` bundle (default: empty) |
+| `-p, --pfx-pass P` | Password for the IIS `.pfx` bundle (default: auto-generated) |
 | `-f, --config FILE` | Company JSON file (default: `company.json` if present) |
 | `-y, --yes` | Accept defaults without prompting |
 | `-h, --help` | Show help |
@@ -89,7 +88,7 @@ Edit `company.json` next to the script and it is loaded automatically. Every val
   "state": "California",
   "locality": "San Francisco",
   "email": "admin@acme.local",
-  "common_name": "",
+  "common_name": "*.example.com",
   "san": "",
   "days": 3650,
   "key_bits": 2048,
@@ -106,11 +105,11 @@ Edit `company.json` next to the script and it is loaded automatically. Every val
 | `state` | State / province (ST), optional |
 | `locality` | City (L), optional |
 | `email` | Email address, optional |
-| `common_name` | CN; blank means detected IP |
+| `common_name` | CN or wildcard (e.g. `*.example.com`); blank means detected IP |
 | `san` | Extra SANs, comma separated |
 | `days` | Validity in days |
 | `key_bits` | RSA key size |
-| `pfx_password` | Password for the `.pfx` |
+| `pfx_password` | Password for the `.pfx`; blank = auto-generated |
 | `out_dir` | Output directory |
 
 Notes:
@@ -131,7 +130,7 @@ The script finds the IP of the adapter used for the default route:
 
 ## Generated files
 
-Files are written to the output directory (`output` by default), named after the CN. The `output/` folder is kept in the repo via `.gitkeep`; generated files inside it are ignored by Git.
+Files are written to the output directory (`output` by default), named after the CN. A wildcard CN `*.example.com` produces `wildcard-example.com.*`. Each run also writes `<cn>-info.md` with the certificate details and the PFX password. The `output/` folder is kept in the repo via `.gitkeep`; generated files inside it are ignored by Git.
 
 | File | Format | Use |
 |---|---|---|
@@ -139,6 +138,7 @@ Files are written to the output directory (`output` by default), named after the
 | `<cn>.key` | PEM private key (600) | Web servers |
 | `<cn>-bundle.pem` | PEM cert + key (600) | Apps expecting one PEM file |
 | `<cn>.pfx` | PKCS#12 cert + key (600) | **IIS import** |
+| `<cn>-info.md` | Markdown summary (600) | Certificate details + PFX password |
 | `<cn>.cnf` | OpenSSL config | Reproducing / inspecting |
 
 ## Certificate details
@@ -149,6 +149,19 @@ Files are written to the output directory (`output` by default), named after the
 - `keyUsage = critical,digitalSignature,keyEncipherment,keyCertSign`
 - `extendedKeyUsage = serverAuth`
 - SubjectAltName automatically includes: CN, detected IP (if CN differs), `localhost`, `127.0.0.1`, hostname, plus any extra SANs
+
+## Wildcard certificates
+
+Set the CN to a wildcard domain (via prompt, `company.json`, or `--cn`):
+
+```bash
+./genssl.sh --yes --cn "*.example.com"
+```
+
+- SANs become `DNS:*.example.com` plus the apex `DNS:example.com`, alongside the usual IP/localhost entries
+- Matches one label only: `app.example.com` works, `deep.app.example.com` does not
+- Only a leftmost wildcard is valid; the script warns on other placements
+- Output files are named `wildcard-example.com.*`
 
 ## Import into IIS
 
@@ -173,6 +186,12 @@ To avoid browser warnings, add `<cn>.crt` to **Trusted Root Certification Author
 - Or: `certutil -addstore -f Root "output\<cn>.crt"` (elevated)
 
 ## Examples
+
+Wildcard certificate:
+
+```bash
+./genssl.sh --name "Acme Corp" --cn "*.example.com"
+```
 
 Hostname certificate:
 

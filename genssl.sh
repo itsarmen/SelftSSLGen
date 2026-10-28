@@ -13,6 +13,7 @@ EMAIL=""
 CN=""
 EXTRA_SANS=""
 PFX_PASS=""
+PFX_GENERATED=0
 ASSUME_YES=0
 CONFIG_FILE=""
 
@@ -27,7 +28,7 @@ Options:
   -s, --san LIST     Extra SANs, comma separated (e.g. 192.168.1.5,host.local)
   -d, --days N       Validity in days (default: 3650 = 10 years)
   -b, --bits N       RSA key size (default: 2048)
-  -p, --pfx-pass P   Password for the IIS .pfx bundle (default: empty)
+  -p, --pfx-pass P   Password for the IIS .pfx bundle (default: auto-generated)
   -f, --config FILE  Company JSON file (default: company.json if present)
   -y, --yes          Accept defaults without prompting
   -h, --help         Show this help
@@ -177,11 +178,22 @@ COUNTRY="$(ask 'Country code (2 letters)' "${COUNTRY:-US}")"
 STATE="$(ask 'State / Province' "$STATE")"
 LOCALITY="$(ask 'City / Locality' "$LOCALITY")"
 EMAIL="$(ask 'Email address (optional)' "$EMAIL")"
-CN="$(ask 'Common Name (CN)' "${CN:-$IP}")"
+CN="$(ask 'Common Name (CN) or wildcard (*.example.com)' "${CN:-$IP}")"
+case "$CN" in
+  *'*'*)
+    case "$CN" in
+      \*.*) ;;
+      *) echo "Warning: only a leftmost wildcard is valid, e.g. *.example.com" >&2 ;;
+    esac
+    ;;
+esac
 EXTRA_SANS="$(ask 'Extra SANs, comma separated (optional)' "$EXTRA_SANS")"
 DAYS="$(ask 'Validity in days' "$DAYS")"
 KEY_BITS="$(ask 'RSA key size' "$KEY_BITS")"
-PFX_PASS="$(ask 'PFX password for IIS import (blank allowed)' "$PFX_PASS")"
+if [ -z "$PFX_PASS" ]; then
+  PFX_PASS="$(openssl rand -hex 8)"
+  PFX_GENERATED=1
+fi
 
 SAN_ENTRIES=""
 DNS_N=0
@@ -200,6 +212,9 @@ add_san() {
 }
 
 add_san "$CN"
+case "$CN" in
+  \*.*) add_san "${CN#\*.}" ;;
+esac
 [ "$CN" = "$IP" ] || add_san "$IP"
 add_san "localhost"
 add_san "127.0.0.1"
@@ -210,13 +225,23 @@ for s in ${_sans[@]+"${_sans[@]}"}; do
 done
 
 mkdir -p "$OUT_DIR"
-SAFE_CN="$(printf '%s' "$CN" | sed 's/[^A-Za-z0-9._-]/_/g')"
+case "$CN" in
+  \*.*) SAFE_CN="wildcard-${CN#\*.}" ;;
+  *) SAFE_CN="$CN" ;;
+esac
+SAFE_CN="$(printf '%s' "$SAFE_CN" | sed 's/[^A-Za-z0-9._-]/_/g')"
 [ -n "$SAFE_CN" ] || SAFE_CN="cert"
 KEY_FILE="$OUT_DIR/$SAFE_CN.key"
 CRT_FILE="$OUT_DIR/$SAFE_CN.crt"
 CFG_FILE="$OUT_DIR/$SAFE_CN.cnf"
 PFX_FILE="$OUT_DIR/$SAFE_CN.pfx"
 PEM_FILE="$OUT_DIR/$SAFE_CN-bundle.pem"
+INFO_FILE="$OUT_DIR/$SAFE_CN-info.md"
+
+DISPLAY_PFX="$PFX_FILE"
+if command -v cygpath >/dev/null 2>&1; then
+  DISPLAY_PFX="$(cygpath -w "$PFX_FILE" 2>/dev/null || printf '%s' "$PFX_FILE")"
+fi
 
 TMP_CFG="$(mktemp 2>/dev/null || echo "$OUT_DIR/.openssl.$$.cnf")"
 trap 'rm -f "$TMP_CFG"' EXIT
@@ -262,7 +287,41 @@ OPENSSL_PFX_PASS="$PFX_PASS" openssl pkcs12 -export \
   -name "$CN" -out "$PFX_FILE" \
   -passout env:OPENSSL_PFX_PASS 2>/dev/null
 
-chmod 600 "$KEY_FILE" "$PFX_FILE" "$PEM_FILE" 2>/dev/null || true
+{
+  echo "# Self-signed certificate: $CN"
+  echo
+  echo "Generated: $(date '+%Y-%m-%d %H:%M:%S %z')"
+  echo
+  echo "## Details"
+  echo
+  echo "- Common Name: \`$CN\`"
+  echo "- Organization: $ORG"
+  echo "- Issued: $(openssl x509 -in "$CRT_FILE" -noout -startdate | cut -d= -f2)"
+  echo "- Expires: $(openssl x509 -in "$CRT_FILE" -noout -enddate | cut -d= -f2)"
+  echo "- Certificate: \`$(basename "$CRT_FILE")\`"
+  echo "- Private key: \`$(basename "$KEY_FILE")\`"
+  echo "- IIS PFX: \`$(basename "$PFX_FILE")\`"
+  echo "- PEM bundle: \`$(basename "$PEM_FILE")\`"
+  echo
+  echo "## IIS import"
+  echo
+  echo "\`\`\`powershell"
+  echo "certutil -f -p \"$PFX_PASS\" -importpfx \"$DISPLAY_PFX\""
+  echo "\`\`\`"
+  echo
+  echo "- PFX password: \`$PFX_PASS\`"
+  if [ "$PFX_GENERATED" = 1 ]; then
+    echo "- Password was auto-generated."
+  fi
+  echo
+  echo "## Subject Alternative Names"
+  echo
+  echo "\`\`\`"
+  openssl x509 -in "$CRT_FILE" -noout -ext subjectAltName | tail -n +2
+  echo "\`\`\`"
+} > "$INFO_FILE"
+
+chmod 600 "$KEY_FILE" "$PFX_FILE" "$PEM_FILE" "$INFO_FILE" 2>/dev/null || true
 chmod 644 "$CRT_FILE" "$CFG_FILE" 2>/dev/null || true
 
 echo
@@ -270,10 +329,16 @@ echo "Done."
 echo "  Certificate: $CRT_FILE"
 echo "  Private key: $KEY_FILE"
 echo "  PEM bundle:  $PEM_FILE"
-echo "  IIS PFX:     $PFX_FILE (password: ${PFX_PASS:-<blank>})"
+echo "  Info:        $INFO_FILE"
+echo "  IIS PFX:     $PFX_FILE"
+if [ "$PFX_GENERATED" = 1 ]; then
+  echo "  PFX password: $PFX_PASS (auto-generated - save it, needed for IIS import)"
+else
+  echo "  PFX password: $PFX_PASS"
+fi
 echo "  Config:      $CFG_FILE"
 echo
 echo "IIS import: IIS Manager > Server Certificates > Import, or:"
-echo "  certutil -f -p \"$PFX_PASS\" -importpfx \"$PFX_FILE\""
+echo "  certutil -f -p \"$PFX_PASS\" -importpfx \"$DISPLAY_PFX\""
 echo
 openssl x509 -in "$CRT_FILE" -noout -subject -issuer -dates -ext subjectAltName
