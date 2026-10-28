@@ -10,5 +10,5 @@
   "days": 3650,
   "key_bits": 2048,
   "pfx_password": "",
-  "out_dir": "certs"
+  "out_dir": "output"
 }

@@ -66,7 +66,7 @@ Defaults below apply when `company.json` and flags are absent; JSON values and f
 
 | Flag | Description |
 |---|---|
-| `-o, --out DIR` | Output directory (default: `certs`) |
+| `-o, --out DIR` | Output directory (default: `output`) |
 | `-n, --name NAME` | Company / Organization name |
 | `-c, --cn NAME` | Common Name (default: detected IP) |
 | `-s, --san LIST` | Extra SANs, comma separated |
@@ -94,7 +94,7 @@ Edit `company.json` next to the script and it is loaded automatically. Every val
   "days": 3650,
   "key_bits": 2048,
   "pfx_password": "",
-  "out_dir": "certs"
+  "out_dir": "output"
 }
 ```
 
@@ -116,7 +116,7 @@ Edit `company.json` next to the script and it is loaded automatically. Every val
 Notes:
 
 - The JSON must be **flat** (simple key/value pairs); nested objects are not supported.
-- Use forward slashes in paths (`certs`), and avoid `"` inside values.
+- Use forward slashes in paths (`output`), and avoid `"` inside values.
 - Use a different file with `--config path\to\file.json`.
 - Fully unattended run using the JSON: `run.bat --yes` (or `./genssl.sh --yes`).
 
@@ -131,7 +131,7 @@ The script finds the IP of the adapter used for the default route:
 
 ## Generated files
 
-Files are written to the output directory (`certs` by default), named after the CN.
+Files are written to the output directory (`output` by default), named after the CN. The `output/` folder is kept in the repo via `.gitkeep`; generated files inside it are ignored by Git.
 
 | File | Format | Use |
 |---|---|---|
@@ -162,7 +162,7 @@ IIS Manager:
 Command line (elevated prompt):
 
 ```powershell
-certutil -f -p "<password>" -importpfx "certs\<cn>.pfx"
+certutil -f -p "<password>" -importpfx "output\<cn>.pfx"
 ```
 
 ## Trust the certificate (optional)
@@ -170,7 +170,7 @@ certutil -f -p "<password>" -importpfx "certs\<cn>.pfx"
 To avoid browser warnings, add `<cn>.crt` to **Trusted Root Certification Authorities**:
 
 - Windows: `certmgr.msc` → *Trusted Root Certification Authorities* → *Certificates* → **All Tasks → Import**
-- Or: `certutil -addstore -f Root "certs\<cn>.crt"` (elevated)
+- Or: `certutil -addstore -f Root "output\<cn>.crt"` (elevated)
 
 ## Examples
 

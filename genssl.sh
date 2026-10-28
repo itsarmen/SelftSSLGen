@@ -21,7 +21,7 @@ usage() {
 Usage: genssl.sh [options]
 
 Options:
-  -o, --out DIR      Output directory (default: certs)
+  -o, --out DIR      Output directory (default: output)
   -n, --name NAME    Company / Organization name
   -c, --cn NAME      Common Name (default: detected IP)
   -s, --san LIST     Extra SANs, comma separated (e.g. 192.168.1.5,host.local)
@@ -114,7 +114,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -n "$OUT_DIR" ] || OUT_DIR="certs"
+[ -n "$OUT_DIR" ] || OUT_DIR="output"
+case "$OUT_DIR" in
+  /*|[A-Za-z]:*) ;;
+  *) OUT_DIR="$SCRIPT_DIR/$OUT_DIR" ;;
+esac
 
 ask() {
   local prompt="$1" def="$2" answer
